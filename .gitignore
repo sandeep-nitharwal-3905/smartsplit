@@ -30,4 +30,6 @@ dist-ssr
 
 # Documentation (excluding important docs)
 # Add specific .md files here if needed
-*.md
+DEPLOYMENT.md
+FIREBASE_SETUP.md
+
