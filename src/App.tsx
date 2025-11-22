@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, DollarSign, LogOut, Trash2, User, ArrowLeftRight, Share2, Copy, Link as LinkIcon } from 'lucide-react';
+import { Users, Plus, DollarSign, LogOut, Trash2, User, ArrowLeftRight, Share2, Copy, Link as LinkIcon, X } from 'lucide-react';
 import { onAuthStateChange, signUpUser, signInUser, logoutUser, signInWithGoogle, sendVerificationEmail } from './firebase/auth';
 import { 
   createGroup as createFirebaseGroup, 
@@ -50,6 +50,14 @@ interface Expense {
   createdAt: string;
   createdBy?: string;
   isSettlement?: boolean;
+  splitAmounts?: Record<string, number>; // Custom split amounts per participant
+}
+
+interface Notification {
+  id: string;
+  message: string;
+  type: 'expense' | 'settlement' | 'group';
+  timestamp: number;
 }
 
 export default function ExpenseSplitApp() {
@@ -74,6 +82,8 @@ export default function ExpenseSplitApp() {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [selectedPayer, setSelectedPayer] = useState('');
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [splitMode, setSplitMode] = useState<'equal' | 'unequal'>('equal');
+  const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
 
   // Group form states
   const [groupName, setGroupName] = useState('');
@@ -87,6 +97,10 @@ export default function ExpenseSplitApp() {
   // Group join states
   const [showJoinLinkModal, setShowJoinLinkModal] = useState(false);
   const [joinGroupId, setJoinGroupId] = useState('');
+
+  // Notification states
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [previousExpenses, setPreviousExpenses] = useState<Expense[]>([]);
 
   // Listen to auth state changes
   useEffect(() => {
@@ -142,8 +156,29 @@ export default function ExpenseSplitApp() {
       
       // Real-time listener for user expenses
       const unsubscribeExpenses = onUserExpensesChange(currentUser.id, async (updatedExpenses) => {
-        setExpenses(updatedExpenses as Expense[]);
-        await loadUsersFromExpenses(updatedExpenses as Expense[]);
+        const expensesList = updatedExpenses as Expense[];
+        
+        // Detect new expenses added by others
+        if (previousExpenses.length > 0) {
+          const newExpenses = expensesList.filter(exp => 
+            !previousExpenses.find(prev => prev.id === exp.id) &&
+            exp.paidBy !== currentUser.id
+          );
+          
+          newExpenses.forEach(expense => {
+            const payerName = getUserName(expense.paidBy);
+            const isSettlement = expense.description === 'Settlement';
+            const message = isSettlement
+              ? `${payerName} settled up $${expense.amount.toFixed(2)}`
+              : `${payerName} added "${expense.description}" - $${expense.amount.toFixed(2)}`;
+            
+            addNotification(message, isSettlement ? 'settlement' : 'expense');
+          });
+        }
+        
+        setPreviousExpenses(expensesList);
+        setExpenses(expensesList);
+        await loadUsersFromExpenses(expensesList);
       });
       
       return () => {
@@ -286,20 +321,28 @@ export default function ExpenseSplitApp() {
     relevantExpenses.forEach(expense => {
       const payer = expense.paidBy;
       const participants = expense.participants;
-      const sharePerPerson = expense.amount / participants.length;
+      
+      // Use custom splits if available, otherwise split equally
+      const getParticipantShare = (participantId: string): number => {
+        if (expense.splitAmounts && expense.splitAmounts[participantId]) {
+          return expense.splitAmounts[participantId];
+        }
+        return expense.amount / participants.length;
+      };
 
       participants.forEach(participantId => {
         if (participantId !== payer) {
+          const shareAmount = getParticipantShare(participantId);
           const key = `${participantId}-${payer}`;
           const reverseKey = `${payer}-${participantId}`;
 
           if (balanceMap[reverseKey]) {
-            balanceMap[reverseKey] -= sharePerPerson;
+            balanceMap[reverseKey] -= shareAmount;
             if (Math.abs(balanceMap[reverseKey]) < 0.01) {
               delete balanceMap[reverseKey];
             }
           } else {
-            balanceMap[key] = (balanceMap[key] || 0) + sharePerPerson;
+            balanceMap[key] = (balanceMap[key] || 0) + shareAmount;
           }
         }
       });
@@ -513,8 +556,31 @@ export default function ExpenseSplitApp() {
     
     if (!currentUser) return;
     
+    // Validate custom splits if unequal mode
+    let splitAmounts: Record<string, number> | undefined;
+    if (splitMode === 'unequal') {
+      splitAmounts = {};
+      let totalSplit = 0;
+      
+      for (const participantId of selectedParticipants) {
+        const amount = parseFloat(customSplits[participantId] || '0');
+        if (isNaN(amount) || amount <= 0) {
+          alert(`Please enter a valid amount for ${getUserName(participantId)}`);
+          return;
+        }
+        splitAmounts[participantId] = amount;
+        totalSplit += amount;
+      }
+      
+      // Allow small rounding differences (0.01)
+      if (Math.abs(totalSplit - parseFloat(expenseAmount)) > 0.01) {
+        alert(`Split amounts ($${totalSplit.toFixed(2)}) must equal total expense ($${expenseAmount})`);
+        return;
+      }
+    }
+    
     try {
-      const newExpense = {
+      const newExpense: any = {
         description: expenseDesc,
         amount: parseFloat(expenseAmount),
         paidBy: selectedPayer,
@@ -524,6 +590,10 @@ export default function ExpenseSplitApp() {
         createdBy: currentUser.id
       };
       
+      if (splitAmounts) {
+        newExpense.splitAmounts = splitAmounts;
+      }
+      
       const docRef = await createFirebaseExpense(newExpense);
       setExpenses([...expenses, { id: docRef.id, ...newExpense }]);
       
@@ -531,6 +601,8 @@ export default function ExpenseSplitApp() {
       setExpenseAmount('');
       setSelectedPayer('');
       setSelectedParticipants([]);
+      setSplitMode('equal');
+      setCustomSplits({});
       setView(selectedGroup ? 'groupDetail' : 'dashboard');
     } catch (error) {
       console.error('Error adding expense:', error);
@@ -674,6 +746,27 @@ export default function ExpenseSplitApp() {
     }).catch(() => {
       alert('Failed to copy. Group ID: ' + groupId);
     });
+  };
+
+  // Notification functions
+  const addNotification = (message: string, type: 'expense' | 'settlement' | 'group') => {
+    const notification: Notification = {
+      id: Date.now().toString(),
+      message,
+      type,
+      timestamp: Date.now()
+    };
+    
+    setNotifications(prev => [...prev, notification]);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      removeNotification(notification.id);
+    }, 5000);
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   // Loading screen
@@ -1029,21 +1122,34 @@ export default function ExpenseSplitApp() {
               ) : (
                 <div className="space-y-2">
                   {expenses.map(expense => (
-                    <div key={expense.id} className="p-3 border border-gray-200 rounded flex justify-between items-center">
-                      <div>
-                        <h3 className="font-semibold">{expense.description}</h3>
-                        <p className="text-sm text-gray-600">
-                          Paid by {getUserName(expense.paidBy)}
-                        </p>
-                      </div>
-                      <div className="text-right flex items-center gap-2">
-                        <span className="font-bold text-teal-600">${expense.amount.toFixed(2)}</span>
-                        <button
-                          onClick={() => deleteExpense(expense.id)}
-                          className="p-1 hover:bg-red-100 rounded"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
+                    <div key={expense.id} className="p-3 border border-gray-200 rounded">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="font-semibold">{expense.description}</h3>
+                          <p className="text-sm text-gray-600">
+                            Paid by {getUserName(expense.paidBy)}
+                          </p>
+                          {expense.splitAmounts && (
+                            <div className="mt-1 text-xs text-gray-500">
+                              <span className="font-medium">Custom split:</span>
+                              {expense.participants.map((pId, idx) => (
+                                <span key={pId}>
+                                  {idx > 0 && ', '}
+                                  {getUserName(pId)}: ${expense.splitAmounts![pId].toFixed(2)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right flex items-center gap-2">
+                          <span className="font-bold text-teal-600">${expense.amount.toFixed(2)}</span>
+                          <button
+                            onClick={() => deleteExpense(expense.id)}
+                            className="p-1 hover:bg-red-100 rounded"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1299,35 +1405,129 @@ export default function ExpenseSplitApp() {
                     {allSelected ? 'Deselect All' : 'Select All'}
                   </button>
                 </div>
-                <div className="space-y-2 border border-gray-300 rounded-lg p-3 max-h-60 overflow-y-auto">
+                
+                {/* Split Mode Toggle */}
+                <div className="mb-3 flex gap-2 p-1 bg-gray-100 rounded-lg">
+                  <button
+                    onClick={() => {
+                      setSplitMode('equal');
+                      setCustomSplits({});
+                    }}
+                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition ${
+                      splitMode === 'equal'
+                        ? 'bg-white text-teal-600 shadow'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Split Equally
+                  </button>
+                  <button
+                    onClick={() => setSplitMode('unequal')}
+                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition ${
+                      splitMode === 'unequal'
+                        ? 'bg-white text-teal-600 shadow'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Split Unequally
+                  </button>
+                </div>
+                
+                <div className="space-y-2 border border-gray-300 rounded-lg p-3 max-h-96 overflow-y-auto">
                   {availableMembers.length === 0 ? (
                     <p className="text-sm text-gray-500">No members available</p>
                   ) : (
                     availableMembers.map(member => (
-                      <label key={member.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
-                        <input
-                          type="checkbox"
-                          checked={selectedParticipants.includes(member.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedParticipants([...selectedParticipants, member.id]);
-                            } else {
-                              setSelectedParticipants(selectedParticipants.filter(id => id !== member.id));
-                            }
-                          }}
-                          className="w-4 h-4 text-teal-600"
-                        />
-                        <span className="flex-1">
-                          {member.id === currentUser?.id ? 'You' : (member.name || member.email || 'Loading...')}
-                        </span>
-                      </label>
+                      <div key={member.id} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                          <input
+                            type="checkbox"
+                            checked={selectedParticipants.includes(member.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedParticipants([...selectedParticipants, member.id]);
+                                if (splitMode === 'unequal' && expenseAmount) {
+                                  // Auto-calculate remaining amount
+                                  const existingSplits = selectedParticipants.reduce((sum, id) => 
+                                    sum + parseFloat(customSplits[id] || '0'), 0
+                                  );
+                                  const remaining = parseFloat(expenseAmount) - existingSplits;
+                                  setCustomSplits({
+                                    ...customSplits,
+                                    [member.id]: remaining > 0 ? remaining.toFixed(2) : '0'
+                                  });
+                                }
+                              } else {
+                                setSelectedParticipants(selectedParticipants.filter(id => id !== member.id));
+                                if (splitMode === 'unequal') {
+                                  const newSplits = { ...customSplits };
+                                  delete newSplits[member.id];
+                                  setCustomSplits(newSplits);
+                                }
+                              }
+                            }}
+                            className="w-4 h-4 text-teal-600"
+                          />
+                          <span className="flex-1">
+                            {member.id === currentUser?.id ? 'You' : (member.name || member.email || 'Loading...')}
+                          </span>
+                          
+                          {/* Custom amount input for unequal split */}
+                          {splitMode === 'unequal' && selectedParticipants.includes(member.id) && (
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={customSplits[member.id] || ''}
+                              onChange={(e) => setCustomSplits({
+                                ...customSplits,
+                                [member.id]: e.target.value
+                              })}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-teal-500"
+                              placeholder="$0.00"
+                            />
+                          )}
+                        </label>
+                      </div>
                     ))
                   )}
                 </div>
+                
                 {selectedParticipants.length > 0 && expenseAmount && (
-                  <p className="text-sm text-gray-600 mt-2">
-                    Each person pays: ${(parseFloat(expenseAmount) / selectedParticipants.length).toFixed(2)}
-                  </p>
+                  <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                    {splitMode === 'equal' ? (
+                      <p className="text-gray-600">
+                        Each person pays: <span className="font-semibold text-gray-800">
+                          ${(parseFloat(expenseAmount) / selectedParticipants.length).toFixed(2)}
+                        </span>
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-gray-600 font-medium">Custom split:</p>
+                        {(() => {
+                          const totalSplit = selectedParticipants.reduce((sum, id) => 
+                            sum + parseFloat(customSplits[id] || '0'), 0
+                          );
+                          const remaining = parseFloat(expenseAmount) - totalSplit;
+                          return (
+                            <>
+                              <p className="text-gray-600">
+                                Total assigned: <span className="font-semibold text-gray-800">${totalSplit.toFixed(2)}</span>
+                              </p>
+                              {Math.abs(remaining) > 0.01 && (
+                                <p className={`font-semibold ${remaining > 0 ? 'text-orange-600' : 'text-red-600'}`}>
+                                  {remaining > 0 ? 'Remaining' : 'Over'}: ${Math.abs(remaining).toFixed(2)}
+                                </p>
+                              )}
+                              {Math.abs(remaining) <= 0.01 && (
+                                <p className="text-green-600 font-semibold">✓ Split matches total</p>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1345,5 +1545,47 @@ export default function ExpenseSplitApp() {
     );
   }
 
-  return null;
+  // Notification Toast Component (rendered globally)
+  const NotificationToast = () => {
+    if (notifications.length === 0) return null;
+
+    return (
+      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className="bg-white rounded-lg shadow-lg p-4 flex items-start gap-3 animate-slide-in border-l-4 border-teal-500"
+          >
+            <div className="flex-shrink-0">
+              {notification.type === 'expense' && (
+                <DollarSign className="w-5 h-5 text-teal-500" />
+              )}
+              {notification.type === 'settlement' && (
+                <ArrowLeftRight className="w-5 h-5 text-green-500" />
+              )}
+              {notification.type === 'group' && (
+                <Users className="w-5 h-5 text-blue-500" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-gray-800 break-words">{notification.message}</p>
+            </div>
+            <button
+              onClick={() => removeNotification(notification.id)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <NotificationToast />
+      {null}
+    </>
+  );
 }
