@@ -32,4 +32,5 @@ dist-ssr
 # Add specific .md files here if needed
 DEPLOYMENT.md
 FIREBASE_SETUP.md
-
+MOBILE_RESPONSIVE_GUIDE.md
+FIREBASE_AUTH_DOMAIN_FIX.md

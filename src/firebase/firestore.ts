@@ -8,7 +8,8 @@ import {
   deleteDoc,
   query,
   where,
-  serverTimestamp
+  serverTimestamp,
+  onSnapshot
 } from 'firebase/firestore';
 import { db } from './config';
 
@@ -67,6 +68,17 @@ export const getUserGroups = async (userId: string) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const onUserGroupsChange = (userId: string, callback: (groups: any[]) => void) => {
+  const q = query(
+    collection(db, COLLECTIONS.GROUPS),
+    where('members', 'array-contains', userId)
+  );
+  return onSnapshot(q, (snapshot) => {
+    const groups = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(groups);
+  });
+};
+
 export const getGroup = async (groupId: string) => {
   const groupDoc = await getDoc(doc(db, COLLECTIONS.GROUPS, groupId));
   return groupDoc.exists() ? { id: groupDoc.id, ...groupDoc.data() } : null;
@@ -97,6 +109,17 @@ export const getGroupExpenses = async (groupId: string | null) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const onGroupExpensesChange = (groupId: string | null, callback: (expenses: any[]) => void) => {
+  const q = groupId
+    ? query(collection(db, COLLECTIONS.EXPENSES), where('groupId', '==', groupId))
+    : query(collection(db, COLLECTIONS.EXPENSES), where('groupId', '==', null));
+  
+  return onSnapshot(q, (snapshot) => {
+    const expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(expenses);
+  });
+};
+
 export const getUserExpenses = async (userId: string) => {
   const q = query(
     collection(db, COLLECTIONS.EXPENSES),
@@ -104,6 +127,17 @@ export const getUserExpenses = async (userId: string) => {
   );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const onUserExpensesChange = (userId: string, callback: (expenses: any[]) => void) => {
+  const q = query(
+    collection(db, COLLECTIONS.EXPENSES),
+    where('participants', 'array-contains', userId)
+  );
+  return onSnapshot(q, (snapshot) => {
+    const expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(expenses);
+  });
 };
 
 export const deleteExpense = async (expenseId: string) => {

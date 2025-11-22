@@ -15,7 +15,10 @@ import {
   getUserFriends,
   getGroup,
   updateGroup,
-  deleteGroup as deleteFirebaseGroup
+  deleteGroup as deleteFirebaseGroup,
+  onUserGroupsChange,
+  onGroupExpensesChange,
+  onUserExpensesChange
 } from './firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { db } from './firebase/config';
@@ -120,8 +123,6 @@ export default function ExpenseSplitApp() {
 
   useEffect(() => {
     if (currentUser) {
-      loadUserData();
-      loadUserExpenses();
       loadUserFriends();
       
       // Check if there's a join group ID in URL
@@ -133,6 +134,22 @@ export default function ExpenseSplitApp() {
         // Clear URL parameter
         window.history.replaceState({}, '', window.location.pathname);
       }
+      
+      // Real-time listener for groups
+      const unsubscribeGroups = onUserGroupsChange(currentUser.id, (updatedGroups) => {
+        setGroups(updatedGroups as Group[]);
+      });
+      
+      // Real-time listener for user expenses
+      const unsubscribeExpenses = onUserExpensesChange(currentUser.id, async (updatedExpenses) => {
+        setExpenses(updatedExpenses as Expense[]);
+        await loadUsersFromExpenses(updatedExpenses as Expense[]);
+      });
+      
+      return () => {
+        unsubscribeGroups();
+        unsubscribeExpenses();
+      };
     }
   }, [currentUser]);
 
@@ -196,8 +213,15 @@ export default function ExpenseSplitApp() {
 
   useEffect(() => {
     if (selectedGroup) {
-      loadGroupExpenses();
       loadGroupMembers();
+      
+      // Real-time listener for group expenses
+      const unsubscribe = onGroupExpensesChange(selectedGroup.id, async (updatedExpenses) => {
+        setExpenses(updatedExpenses as Expense[]);
+        await loadUsersFromExpenses(updatedExpenses as Expense[]);
+      });
+      
+      return () => unsubscribe();
     }
   }, [selectedGroup]);
 
@@ -665,7 +689,7 @@ export default function ExpenseSplitApp() {
   if (view === 'login') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-teal-400 to-blue-500 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+        <div className="bg-white rounded-lg shadow-2xl p-4 sm:p-8 w-full max-w-md">
           <div className="text-center mb-8">
             <DollarSign className="w-16 h-16 mx-auto text-teal-500 mb-2" />
             <h1 className="text-3xl font-bold text-gray-800">SplitEasy</h1>
@@ -754,11 +778,11 @@ export default function ExpenseSplitApp() {
   if (view === 'dashboard') {
     return (
       <div className="min-h-screen bg-gray-50">
-        <nav className="bg-teal-500 text-white p-4 shadow-lg">
+        <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
           <div className="max-w-6xl mx-auto flex justify-between items-center">
-            <h1 className="text-2xl font-bold">SplitEasy</h1>
-            <div className="flex items-center gap-4">
-              <span className="text-sm">Welcome, {currentUser?.name}</span>
+            <h1 className="text-lg sm:text-2xl font-bold">SplitEasy</h1>
+            <div className="flex items-center gap-2 sm:gap-4">
+              <span className="text-xs sm:text-sm truncate max-w-[120px] sm:max-w-none">Welcome, {currentUser?.name}</span>
               <button onClick={handleLogout} className="p-2 hover:bg-teal-600 rounded">
                 <LogOut className="w-5 h-5" />
               </button>
@@ -766,11 +790,11 @@ export default function ExpenseSplitApp() {
           </div>
         </nav>
 
-        <div className="max-w-6xl mx-auto p-6">
-          <div className="grid md:grid-cols-3 gap-6 mb-6">
+        <div className="max-w-6xl mx-auto p-4 sm:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 mb-6">
             <button
               onClick={() => setView('addGroup')}
-              className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition flex items-center justify-center gap-3"
+              className="bg-white p-4 sm:p-6 rounded-lg shadow hover:shadow-lg transition flex items-center justify-center gap-3"
             >
               <Users className="w-6 h-6 text-teal-500" />
               <span className="font-semibold">Create Group</span>
@@ -798,16 +822,15 @@ export default function ExpenseSplitApp() {
               onClick={() => {
                 setSelectedGroup(null);
                 setView('addExpense');
-              }}
-              className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition flex items-center justify-center gap-3"
+              }}  className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition flex items-center justify-center gap-3"
             >
               <Plus className="w-6 h-6 text-teal-500" />
               <span className="font-semibold">Add Expense</span>
             </button>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5" />
                 Your Groups
@@ -872,9 +895,9 @@ export default function ExpenseSplitApp() {
         {/* Join Group Modal */}
         {showJoinLinkModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-              <h2 className="text-2xl font-bold mb-4">Join a Group</h2>
-              <p className="text-gray-600 mb-4">Enter the Group ID to join</p>
+            <div className="bg-white rounded-lg shadow-xl p-4 sm:p-6 w-full max-w-md">
+              <h2 className="text-xl sm:text-2xl font-bold mb-4">Join a Group</h2>
+              <p className="text-sm sm:text-base text-gray-600 mb-4">Enter the Group ID to join</p>
               
               <input
                 type="text"
@@ -913,13 +936,13 @@ export default function ExpenseSplitApp() {
   if (view === 'groupDetail' && selectedGroup) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <nav className="bg-teal-500 text-white p-4 shadow-lg">
+        <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
           <div className="max-w-6xl mx-auto flex justify-between items-center">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button onClick={() => setView('dashboard')} className="hover:bg-teal-600 p-2 rounded">
                 ← Back
               </button>
-              <h1 className="text-2xl font-bold">{selectedGroup.name}</h1>
+              <h1 className="text-lg sm:text-2xl font-bold truncate">{selectedGroup.name}</h1>
             </div>
             <button onClick={handleLogout} className="p-2 hover:bg-teal-600 rounded">
               <LogOut className="w-5 h-5" />
@@ -927,11 +950,11 @@ export default function ExpenseSplitApp() {
           </div>
         </nav>
 
-        <div className="max-w-6xl mx-auto p-6">
-          <div className="flex gap-3 mb-6">
+        <div className="max-w-6xl mx-auto p-4 sm:p-6">
+          <div className="flex flex-wrap gap-2 sm:gap-3 mb-4 sm:mb-6">
             <button
               onClick={() => setView('addExpense')}
-              className="flex-1 bg-teal-500 text-white py-3 rounded-lg hover:bg-teal-600 transition font-semibold flex items-center justify-center gap-2"
+              className="flex-1 min-w-[140px] bg-teal-500 text-white py-2 sm:py-3 px-3 sm:px-4 rounded-lg hover:bg-teal-600 transition font-semibold flex items-center justify-center gap-2"
             >
               <Plus className="w-5 h-5" />
               Add Expense
@@ -939,36 +962,36 @@ export default function ExpenseSplitApp() {
             
             <button
               onClick={() => copyGroupLink(selectedGroup.id)}
-              className="bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 transition font-semibold flex items-center gap-2"
+              className="bg-blue-500 text-white py-2 sm:py-3 px-3 sm:px-4 rounded-lg hover:bg-blue-600 transition font-semibold flex items-center gap-1 sm:gap-2"
               title="Share group link"
             >
-              <Share2 className="w-5 h-5" />
-              Share
+              <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Share</span>
             </button>
             
             <button
               onClick={() => copyGroupId(selectedGroup.id)}
-              className="bg-gray-500 text-white py-3 px-4 rounded-lg hover:bg-gray-600 transition font-semibold flex items-center gap-2"
+              className="bg-gray-500 text-white py-2 sm:py-3 px-3 sm:px-4 rounded-lg hover:bg-gray-600 transition font-semibold flex items-center gap-1 sm:gap-2"
               title="Copy group ID"
             >
-              <Copy className="w-5 h-5" />
-              ID
+              <Copy className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">ID</span>
             </button>
             
             {selectedGroup.createdBy === currentUser?.id && (
               <button
                 onClick={() => handleDeleteGroup(selectedGroup.id)}
-                className="bg-red-500 text-white py-3 px-4 rounded-lg hover:bg-red-600 transition font-semibold flex items-center gap-2"
+                className="bg-red-500 text-white py-2 sm:py-3 px-3 sm:px-4 rounded-lg hover:bg-red-600 transition font-semibold flex items-center gap-1 sm:gap-2"
                 title="Delete group"
               >
-                <Trash2 className="w-5 h-5" />
-                Delete
+                <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline">Delete</span>
               </button>
             )}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h2 className="text-xl font-bold mb-4">Group Balances</h2>
               {Object.keys(balances).length === 0 ? (
                 <p className="text-gray-500">All settled up!</p>
@@ -1037,17 +1060,17 @@ export default function ExpenseSplitApp() {
   if (view === 'addGroup') {
     return (
       <div className="min-h-screen bg-gray-50">
-        <nav className="bg-teal-500 text-white p-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center gap-4">
+        <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
             <button onClick={() => setView('dashboard')} className="hover:bg-teal-600 p-2 rounded">
               ← Back
             </button>
-            <h1 className="text-2xl font-bold">Create New Group</h1>
+            <h1 className="text-lg sm:text-2xl font-bold">Create New Group</h1>
           </div>
         </nav>
 
-        <div className="max-w-4xl mx-auto p-6">
-          <div className="bg-white rounded-lg shadow p-6">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Group Name</label>
@@ -1116,17 +1139,17 @@ export default function ExpenseSplitApp() {
   if (view === 'addFriend') {
     return (
       <div className="min-h-screen bg-gray-50">
-        <nav className="bg-teal-500 text-white p-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center gap-4">
+        <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
             <button onClick={() => setView('dashboard')} className="hover:bg-teal-600 p-2 rounded">
               ← Back
             </button>
-            <h1 className="text-2xl font-bold">Add Friend</h1>
+            <h1 className="text-lg sm:text-2xl font-bold">Add Friend</h1>
           </div>
         </nav>
 
-        <div className="max-w-4xl mx-auto p-6">
-          <div className="bg-white rounded-lg shadow p-6">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Friend's Email</label>
@@ -1204,20 +1227,20 @@ export default function ExpenseSplitApp() {
 
     return (
       <div className="min-h-screen bg-gray-50">
-        <nav className="bg-teal-500 text-white p-4 shadow-lg">
-          <div className="max-w-4xl mx-auto flex items-center gap-4">
+        <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
             <button 
               onClick={() => setView(selectedGroup ? 'groupDetail' : 'dashboard')} 
               className="hover:bg-teal-600 p-2 rounded"
             >
               ← Back
             </button>
-            <h1 className="text-2xl font-bold">Add Expense</h1>
+            <h1 className="text-lg sm:text-2xl font-bold">Add Expense</h1>
           </div>
         </nav>
 
-        <div className="max-w-4xl mx-auto p-6">
-          <div className="bg-white rounded-lg shadow p-6">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6">
+          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
             {selectedGroup && (
               <div className="mb-4 p-3 bg-teal-50 border border-teal-200 rounded-lg">
                 <p className="text-sm text-teal-800">
