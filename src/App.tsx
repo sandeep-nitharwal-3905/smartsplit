@@ -785,7 +785,7 @@ export default function ExpenseSplitApp() {
         <div className="bg-white rounded-lg shadow-2xl p-4 sm:p-8 w-full max-w-md">
           <div className="text-center mb-8">
             <DollarSign className="w-16 h-16 mx-auto text-teal-500 mb-2" />
-            <h1 className="text-3xl font-bold text-gray-800">SplitEasy</h1>
+            <h1 className="text-3xl font-bold text-gray-800">SmartSplit</h1>
             <p className="text-gray-600">Split expenses with friends</p>
           </div>
           
@@ -873,7 +873,7 @@ export default function ExpenseSplitApp() {
       <div className="min-h-screen bg-gray-50">
         <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
           <div className="max-w-6xl mx-auto flex justify-between items-center">
-            <h1 className="text-lg sm:text-2xl font-bold">SplitEasy</h1>
+            <h1 className="text-lg sm:text-2xl font-bold">SmartSplit</h1>
             <div className="flex items-center gap-2 sm:gap-4">
               <span className="text-xs sm:text-sm truncate max-w-[120px] sm:max-w-none">Welcome, {currentUser?.name}</span>
               <button onClick={handleLogout} className="p-2 hover:bg-teal-600 rounded">
@@ -912,7 +912,7 @@ export default function ExpenseSplitApp() {
           {/* Info Banner for first-time users */}
           {groups.length === 0 && expenses.length === 0 && (
             <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="font-semibold text-blue-900 mb-2">👋 Welcome to SplitEasy!</h3>
+              <h3 className="font-semibold text-blue-900 mb-2">👋 Welcome to SmartSplit!</h3>
               <p className="text-sm text-blue-800 mb-2">Get started by creating a group or joining an existing one:</p>
               <ul className="text-sm text-blue-700 space-y-1 ml-4 list-disc">
                 <li><strong>Create Group:</strong> Perfect for roommates, trips, or shared expenses</li>
