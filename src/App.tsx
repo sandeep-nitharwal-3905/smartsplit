@@ -111,6 +111,10 @@ export default function ExpenseSplitApp() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
 
+  // Edit group states
+  const [isEditingGroupName, setIsEditingGroupName] = useState(false);
+  const [editGroupName, setEditGroupName] = useState('');
+
   // Listen to auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
@@ -996,6 +1000,13 @@ export default function ExpenseSplitApp() {
               {isSignUp ? 'Log In' : 'Sign Up'}
             </button>
           </p>
+          
+          {/* Footer */}
+          <div className="text-center mt-6 pt-4 border-t border-gray-200">
+            <p className="text-sm text-gray-600">
+              Developed & designed with <span className="text-red-500">❤</span> by Sandeep Nitharwal
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -1164,6 +1175,13 @@ export default function ExpenseSplitApp() {
             </div>
           </div>
         )}
+        
+        {/* Footer */}
+        <footer className="mt-8 pb-6 text-center">
+          <p className="text-xs sm:text-sm text-gray-600">
+            Developed & designed with <span className="text-red-500">❤</span> by Sandeep Nitharwal
+          </p>
+        </footer>
       </div>
     );
   }
@@ -1174,11 +1192,59 @@ export default function ExpenseSplitApp() {
       <div className="min-h-screen bg-gray-50">
         <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
           <div className="max-w-6xl mx-auto flex justify-between items-center">
-            <div className="flex items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-4 flex-1">
               <button onClick={() => setView('dashboard')} className="hover:bg-teal-600 p-2 rounded">
                 ← Back
               </button>
-              <h1 className="text-lg sm:text-2xl font-bold truncate">{selectedGroup.name}</h1>
+              {isEditingGroupName ? (
+                <div className="flex items-center gap-2 flex-1 max-w-md">
+                  <input
+                    type="text"
+                    value={editGroupName}
+                    onChange={(e) => setEditGroupName(e.target.value)}
+                    className="flex-1 px-3 py-1 text-sm sm:text-base border border-white rounded bg-teal-600 text-white placeholder-teal-200 focus:outline-none focus:ring-2 focus:ring-white"
+                    placeholder="Group name"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (editGroupName.trim()) {
+                        await updateGroup(selectedGroup.id, { name: editGroupName });
+                        setSelectedGroup({ ...selectedGroup, name: editGroupName });
+                        setGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, name: editGroupName } : g));
+                        setIsEditingGroupName(false);
+                      }
+                    }}
+                    className="text-white hover:bg-teal-600 p-1 rounded text-sm"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingGroupName(false);
+                      setEditGroupName(selectedGroup.name);
+                    }}
+                    className="text-white hover:bg-teal-600 p-1 rounded text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg sm:text-2xl font-bold truncate">{selectedGroup.name}</h1>
+                  <button
+                    onClick={() => {
+                      setEditGroupName(selectedGroup.name);
+                      setIsEditingGroupName(true);
+                    }}
+                    className="hover:bg-teal-600 p-1 rounded"
+                    title="Edit group name"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
             <button onClick={handleLogout} className="p-2 hover:bg-teal-600 rounded">
               <LogOut className="w-5 h-5" />
@@ -1194,6 +1260,15 @@ export default function ExpenseSplitApp() {
             >
               <Plus className="w-5 h-5" />
               Add Expense
+            </button>
+            
+            <button
+              onClick={() => setView('manageGroupMembers')}
+              className="bg-purple-500 text-white py-2 sm:py-3 px-3 sm:px-4 rounded-lg hover:bg-purple-600 transition font-semibold flex items-center gap-1 sm:gap-2"
+              title="Manage members"
+            >
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Members</span>
             </button>
             
             <button
@@ -1373,75 +1448,44 @@ export default function ExpenseSplitApp() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Add Members</label>
-                
-                {/* Quick add from friends */}
-                {friends.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-xs text-gray-600 mb-2">Quick add from your friends:</p>
-                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                      {friends.map(friend => {
-                        const isAdded = groupMembers.includes(friend.id);
-                        return (
-                          <button
-                            key={friend.id}
-                            onClick={() => {
-                              if (isAdded) {
-                                setGroupMembers(groupMembers.filter(id => id !== friend.id));
-                              } else {
-                                setGroupMembers([...groupMembers, friend.id]);
-                              }
-                            }}
-                            className={`px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm transition ${
-                              isAdded
-                                ? 'bg-teal-100 text-teal-700 border-2 border-teal-500'
-                                : 'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:border-gray-400'
-                            }`}
-                          >
-                            {isAdded && '✓ '}{friend.name || friend.email}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Add by email */}
-                <p className="text-xs text-gray-600 mb-2">Add new members by email:</p>
-                <div className="flex flex-col sm:flex-row gap-2 mb-2">
-                  <input
-                    type="email"
-                    value={tempMemberEmail}
-                    onChange={(e) => setTempMemberEmail(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && addMemberToGroup()}
-                    placeholder="friend@example.com"
-                    className="flex-1 px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
-                  />
-                  <button
-                    onClick={addMemberToGroup}
-                    className="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 text-sm sm:text-base whitespace-nowrap"
-                  >
-                    Add
-                  </button>
-                </div>
-                <div className="space-y-1.5">
-                  {groupMembers.map(memberId => {
-                    const member = memberCache[memberId] || friends.find(f => f.id === memberId);
-                    return (
-                      <div key={memberId} className="flex justify-between items-center p-2 sm:p-2.5 bg-gray-50 rounded">
-                        <span className="text-sm sm:text-base truncate mr-2">{member?.name || 'Unknown'}</span>
+              {friends.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Add Members (Optional)</label>
+                  <p className="text-xs text-gray-600 mb-2">Select friends to add to this group:</p>
+                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                    {friends.map(friend => {
+                      const isAdded = groupMembers.includes(friend.id);
+                      return (
                         <button
-                          onClick={() => setGroupMembers(groupMembers.filter(id => id !== memberId))}
-                          className="text-red-500 text-xs sm:text-sm font-medium hover:text-red-700 flex-shrink-0"
+                          key={friend.id}
+                          onClick={() => {
+                            if (isAdded) {
+                              setGroupMembers(groupMembers.filter(id => id !== friend.id));
+                            } else {
+                              setGroupMembers([...groupMembers, friend.id]);
+                            }
+                          }}
+                          className={`px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm transition ${
+                            isAdded
+                              ? 'bg-teal-100 text-teal-700 border-2 border-teal-500'
+                              : 'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:border-gray-400'
+                          }`}
                         >
-                          Remove
+                          {isAdded && '✓ '}{friend.name || friend.email}
                         </button>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {friends.length === 0 && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs sm:text-sm text-blue-800">
+                    💡 Tip: Add friends first to quickly add them to groups. You can add members after creating the group too!
+                  </p>
+                </div>
+              )}
 
               <button
                 onClick={handleAddGroup}
@@ -1497,6 +1541,155 @@ export default function ExpenseSplitApp() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // Manage Group Members View
+  if (view === 'manageGroupMembers' && selectedGroup) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <nav className="bg-teal-500 text-white p-3 sm:p-4 shadow-lg">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
+            <button onClick={() => setView('groupDetail')} className="hover:bg-teal-600 p-2 rounded">
+              ← Back
+            </button>
+            <h1 className="text-lg sm:text-2xl font-bold">Manage Members</h1>
+          </div>
+        </nav>
+
+        <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6">
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4 md:p-6">
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-xs sm:text-sm text-blue-800">
+                💡 Add members to your group by selecting from your friends or adding new users by email.
+              </p>
+            </div>
+
+            {/* Quick add from friends */}
+            {friends.length > 0 && (
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-2">Add from Friends</label>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                  {friends.map(friend => {
+                    const isAdded = selectedGroup.members.includes(friend.id);
+                    return (
+                      <button
+                        key={friend.id}
+                        onClick={async () => {
+                          if (!isAdded) {
+                            const updatedMembers = [...selectedGroup.members, friend.id];
+                            await updateGroup(selectedGroup.id, { members: updatedMembers });
+                            setSelectedGroup({ ...selectedGroup, members: updatedMembers });
+                            setGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, members: updatedMembers } : g));
+                          }
+                        }}
+                        disabled={isAdded}
+                        className={`px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm transition ${
+                          isAdded
+                            ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            : 'bg-teal-100 text-teal-700 border-2 border-teal-500 hover:bg-teal-200'
+                        }`}
+                      >
+                        {isAdded ? '✓ Added' : `+ ${friend.name || friend.email}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Add by email */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">Add by Email</label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="email"
+                  value={tempMemberEmail}
+                  onChange={(e) => setTempMemberEmail(e.target.value)}
+                  onKeyPress={async (e) => {
+                    if (e.key === 'Enter') {
+                      await addMemberToGroup();
+                      if (selectedGroup && tempMemberEmail) {
+                        const user = await getUserByEmail(tempMemberEmail);
+                        if (user && !selectedGroup.members.includes(user.id)) {
+                          const updatedMembers = [...selectedGroup.members, user.id];
+                          await updateGroup(selectedGroup.id, { members: updatedMembers });
+                          setSelectedGroup({ ...selectedGroup, members: updatedMembers });
+                          setGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, members: updatedMembers } : g));
+                          setTempMemberEmail('');
+                        }
+                      }
+                    }
+                  }}
+                  placeholder="friend@example.com"
+                  className="flex-1 px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+                <button
+                  onClick={async () => {
+                    if (!tempMemberEmail) return;
+                    try {
+                      const user = await getUserByEmail(tempMemberEmail);
+                      if (user && !selectedGroup.members.includes(user.id)) {
+                        const updatedMembers = [...selectedGroup.members, user.id];
+                        await updateGroup(selectedGroup.id, { members: updatedMembers });
+                        setSelectedGroup({ ...selectedGroup, members: updatedMembers });
+                        setGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, members: updatedMembers } : g));
+                        setMemberCache({ ...memberCache, [user.id]: user as User });
+                        setTempMemberEmail('');
+                        alert('Member added successfully!');
+                      } else {
+                        alert('User not found or already in group');
+                      }
+                    } catch (error) {
+                      alert('Failed to add member');
+                    }
+                  }}
+                  className="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 text-sm sm:text-base whitespace-nowrap"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Current members */}
+            <div>
+              <h3 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-base">Current Members ({selectedGroup.members.length})</h3>
+              <div className="space-y-1.5 sm:space-y-2">
+                {selectedGroup.members.map(memberId => {
+                  const member = memberCache[memberId] || friends.find(f => f.id === memberId) || { id: memberId, name: 'Loading...', email: '' };
+                  const isCreator = memberId === selectedGroup.createdBy;
+                  const isCurrentUser = memberId === currentUser?.id;
+                  return (
+                    <div key={memberId} className="flex justify-between items-center p-2.5 sm:p-3 bg-gray-50 rounded">
+                      <div>
+                        <p className="font-medium text-sm sm:text-base truncate">
+                          {member.name || 'Unknown'} {isCurrentUser && '(You)'} {isCreator && '👑'}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                      </div>
+                      {!isCreator && selectedGroup.createdBy === currentUser?.id && (
+                        <button
+                          onClick={async () => {
+                            if (confirm('Remove this member from the group?')) {
+                              const updatedMembers = selectedGroup.members.filter(id => id !== memberId);
+                              await updateGroup(selectedGroup.id, { members: updatedMembers });
+                              setSelectedGroup({ ...selectedGroup, members: updatedMembers });
+                              setGroups(groups.map(g => g.id === selectedGroup.id ? { ...g, members: updatedMembers } : g));
+                            }
+                          }}
+                          className="text-red-500 text-xs sm:text-sm font-medium hover:text-red-700 flex-shrink-0"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
