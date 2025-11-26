@@ -136,6 +136,41 @@ export default function ExpenseSplitApp() {
     setIsDarkTheme(!isDarkTheme);
   };
 
+  // Handle browser back button to navigate within app instead of exiting
+  useEffect(() => {
+    // Push initial state
+    window.history.pushState({ view }, '', window.location.href);
+
+    const handlePopState = (event: PopStateEvent) => {
+      event.preventDefault();
+      
+      // Determine the previous view based on current view
+      if (view === 'addExpense') {
+        setView(selectedGroup ? 'groupDetail' : 'dashboard');
+      } else if (view === 'groupDetail') {
+        setView('dashboard');
+      } else if (view === 'addGroup') {
+        setView('dashboard');
+      } else if (view === 'addFriend') {
+        setView('dashboard');
+      } else if (view === 'manageGroupMembers') {
+        setView('groupDetail');
+      } else if (view === 'dashboard') {
+        // On dashboard, stay on dashboard (don't exit app)
+        window.history.pushState({ view: 'dashboard' }, '', window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    // Update history state when view changes
+    window.history.replaceState({ view }, '', window.location.href);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [view, selectedGroup]);
+
   // Listen to auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
