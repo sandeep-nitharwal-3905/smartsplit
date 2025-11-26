@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, IndianRupee, LogOut, Trash2, User, ArrowLeftRight, Share2, Copy, Link as LinkIcon, X, Moon, Sun } from 'lucide-react';
+import { Users, Plus, IndianRupee, LogOut, Trash2, User, ArrowLeftRight, Share2, Copy, Link as LinkIcon, X, Moon, Sun, ArrowLeft } from 'lucide-react';
+import HomePage from './components/HomePage';
 import { onAuthStateChange, signUpUser, signInUser, logoutUser, signInWithGoogle, sendVerificationEmail } from './firebase/auth';
 import { 
   createGroup as createFirebaseGroup, 
@@ -63,7 +64,7 @@ interface Notification {
 
 export default function ExpenseSplitApp() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [view, setView] = useState('login');
+  const [view, setView] = useState('home');
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -145,7 +146,9 @@ export default function ExpenseSplitApp() {
       event.preventDefault();
       
       // Determine the previous view based on current view
-      if (view === 'addExpense') {
+      if (view === 'login') {
+        setView('home');
+      } else if (view === 'addExpense') {
         setView(selectedGroup ? 'groupDetail' : 'dashboard');
       } else if (view === 'groupDetail') {
         setView('dashboard');
@@ -158,6 +161,9 @@ export default function ExpenseSplitApp() {
       } else if (view === 'dashboard') {
         // On dashboard, stay on dashboard (don't exit app)
         window.history.pushState({ view: 'dashboard' }, '', window.location.href);
+      } else if (view === 'home') {
+        // On home page, stay on home (don't exit)
+        window.history.pushState({ view: 'home' }, '', window.location.href);
       }
     };
 
@@ -173,35 +179,48 @@ export default function ExpenseSplitApp() {
 
   // Listen to auth state changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChange(async (firebaseUser) => {
-      if (firebaseUser) {
-        // Check if email is verified (skip for Google users)
-        if (!firebaseUser.emailVerified && !firebaseUser.providerData.some(p => p.providerId === 'google.com')) {
-          setCurrentUser(null);
-          setView('login');
+    let unsubscribe: (() => void) | undefined;
+    
+    try {
+      unsubscribe = onAuthStateChange(async (firebaseUser) => {
+        console.log('Auth state changed:', firebaseUser ? 'User logged in' : 'No user');
+        if (firebaseUser) {
+          // Check if email is verified (skip for Google users)
+          if (!firebaseUser.emailVerified && !firebaseUser.providerData.some(p => p.providerId === 'google.com')) {
+            setCurrentUser(null);
+            setView('login');
+            setLoading(false);
+            setEmailVerificationSent(true);
+            return;
+          }
+          
+          const userData: User = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            name: firebaseUser.displayName || '',
+            createdAt: firebaseUser.metadata.creationTime || ''
+          };
+          setCurrentUser(userData);
+          setView('dashboard');
           setLoading(false);
-          setEmailVerificationSent(true);
-          return;
+          setEmailVerificationSent(false);
+        } else {
+          setCurrentUser(null);
+          setView('home');
+          setLoading(false);
         }
-        
-        const userData: User = {
-          id: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          name: firebaseUser.displayName || '',
-          createdAt: firebaseUser.metadata.creationTime || ''
-        };
-        setCurrentUser(userData);
-        setView('dashboard');
-        setLoading(false);
-        setEmailVerificationSent(false);
-      } else {
-        setCurrentUser(null);
-        setView('login');
-        setLoading(false);
-      }
-    });
+      });
+    } catch (error) {
+      console.error('Firebase initialization error:', error);
+      // If Firebase isn't configured, still show the homepage
+      setCurrentUser(null);
+      setView('home');
+      setLoading(false);
+    }
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -959,6 +978,7 @@ export default function ExpenseSplitApp() {
 
   // Loading screen
   if (loading) {
+    console.log('Still loading...');
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDarkTheme ? 'bg-gradient-to-br from-purple-900 via-blue-900 to-cyan-900' : 'bg-gradient-to-br from-teal-400 to-blue-500'}`}>
         <div className={`text-2xl font-semibold ${isDarkTheme ? 'text-cyan-400' : 'text-white'}`}>Loading...</div>
@@ -966,21 +986,40 @@ export default function ExpenseSplitApp() {
     );
   }
 
+  // Home Page View (before login)
+  if (view === 'home') {
+    console.log('Rendering HomePage');
+    return <HomePage onGetStarted={() => setView('login')} />;
+  }
+
   // Login/Signup View
   if (view === 'login') {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkTheme ? 'bg-gradient-to-br from-purple-900 via-blue-900 to-cyan-900' : 'bg-gradient-to-br from-teal-400 to-blue-500'}`}>
+        {/* Back to Home Button */}
+        <button
+          onClick={() => setView('home')}
+          className={`fixed top-2 left-2 sm:top-4 sm:left-4 p-2 sm:p-3 rounded-full shadow-lg transition-all z-50 ${
+            isDarkTheme 
+              ? 'bg-cyan-500 text-gray-900 hover:bg-cyan-400' 
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+          title="Back to Home"
+        >
+          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+
         {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
-          className={`fixed top-4 right-4 p-3 rounded-full shadow-lg transition-all ${
+          className={`fixed top-2 right-2 sm:top-4 sm:right-4 p-2 sm:p-3 rounded-full shadow-lg transition-all z-50 ${
             isDarkTheme 
               ? 'bg-cyan-500 text-gray-900 hover:bg-cyan-400' 
               : 'bg-white text-gray-700 hover:bg-gray-100'
           }`}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
-          {isDarkTheme ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          {isDarkTheme ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
         </button>
 
         <div className={`rounded-lg shadow-2xl p-4 sm:p-8 w-full max-w-md ${
